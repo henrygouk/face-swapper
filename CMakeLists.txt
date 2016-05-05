@@ -15,7 +15,6 @@ add_executable(
 target_link_libraries(
 	face-swapper
 	${OpenCV_LIBS}
-	dlib
 	pthread
 	blas
 	lapack

@@ -68,13 +68,13 @@ void overlayImage(Mat* src, Mat* overlay, const Point& location)
 void FaceSwapper::init()
 {
 	mCapture = VideoCapture(-1);
-	//mCapture.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
-	//mCapture.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
+	mCapture.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
+	mCapture.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
 	mRunning = true;
 
 	mFaceDetector.load("/usr/share/opencv/haarcascades/haarcascade_frontalface_alt.xml");
-	mEyeDetector.load("/usr/share/opencv/haarcascades/haarcascade_mcs_eyepair_big.xml");
-	mAlphaMask = imread("/home/henry/Projects/face-swapper/alphamask.png", IMREAD_UNCHANGED);
+	mEyeDetector.load("/usr/share/opencv/haarcascades/haarcascade_eye_tree_eyeglasses.xml");
+	mAlphaMask = imread("../alphamask.png", IMREAD_UNCHANGED);
 }
 
 bool FaceSwapper::running()
@@ -127,6 +127,13 @@ void FaceSwapper::detectNewFaces()
 	cvtColor(mFrame, gsFrame, CV_BGR2GRAY);
 	equalizeHist(gsFrame, gsFrame);
 	mFaceDetector.detectMultiScale(gsFrame, mFaces, 1.1, 4, CV_HAAR_SCALE_IMAGE, Size(30, 30));//, Size(120, 120));
+	
+	mMisdetect.clear();
+
+	for(size_t i = 0; i < mFaces.size(); i++)
+	{
+		mMisdetect.push_back(0);
+	}
 }
 
 /**
@@ -143,18 +150,29 @@ void FaceSwapper::trackExistingFaces()
 		std::vector<Rect> eyes;
 		auto roi = doubleRectSize(mFaces[i], mFrame.size());
 		mFaceDetector.detectMultiScale(mFrame(roi), faces, 1.1, 2, 0, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
-		mEyeDetector.detectMultiScale(mFrame(roi), eyes, 1.1, 3, 0);
+		mEyeDetector.detectMultiScale(mFrame(roi), eyes, 1.1, 2, 0);
 
 
-		if(eyes.size() == 1)
+		if(faces.size() > 0 && eyes.size() > 0)
 		{
-			mFaces[i].x = mFaces[i].x * 0.5 + 0.5 * (roi.x + faces[0].x);
-			mFaces[i].y = mFaces[i].y * 0.5 + 0.5 * (roi.y + faces[0].y);
+			//mFaces[i].x = mFaces[i].x * 0.5 + 0.5 * (roi.x + faces[0].x);
+			//mFaces[i].y = mFaces[i].y * 0.5 + 0.5 * (roi.y + faces[0].y);
+			mFaces[i] = faces[0];
+			mFaces[i].x += roi.x;
+			mFaces[i].y += roi.y;
+			mMisdetect[i] = 0;
 		}
 		else
 		{
-			mFaces.erase(mFaces.begin() + i);
-			i--;
+			if(mMisdetect[i] == 5)
+			{
+				mFaces.erase(mFaces.begin() + i);
+				i--;
+			}
+			else
+			{
+				mMisdetect[i]++;
+			}
 		}
 	}
 }
@@ -222,15 +240,24 @@ void changeMean(Mat &input, float *oldMean, float *newMean, float *oldSd, float 
 			float b = p[0];
 			float g = p[1];
 			float r = p[2];
-			b *= bs;
+			/*b *= bs;
 			g *= gs;
 			r *= rs;
 			b += newMean[0] - oldMean[0];
 			g += newMean[1] - oldMean[1];
-			r += newMean[2] - oldMean[2];
+			r += newMean[2] - oldMean[2];*/
 			//b /= (oldMean[0] / newMean[0]);
 			//g /= (oldMean[1] / newMean[1]);
 			//r /= (oldMean[2] / newMean[2]);
+			b -= oldMean[0];
+			g -= oldMean[1];
+			r -= oldMean[2];
+			b *= bs;
+			g *= gs;
+			r *= rs;
+			b += newMean[0];
+			g += newMean[1];
+			r += newMean[2];
 			p[0] = clamp(0, b, 255);
 			p[1] = clamp(0, g, 255);
 			p[2] = clamp(0, r, 255);

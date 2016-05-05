@@ -22,6 +22,7 @@ class FaceSwapper
 		cv::CascadeClassifier mFaceDetector;
 		cv::CascadeClassifier mEyeDetector;
 		std::vector<cv::Rect> mFaces;
+		std::vector<size_t> mMisdetect;
 
 		void detectNewFaces();
 		void trackExistingFaces();

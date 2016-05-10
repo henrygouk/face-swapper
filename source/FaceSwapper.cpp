@@ -112,7 +112,10 @@ void FaceSwapper::update()
 
 void FaceSwapper::draw()
 {
-	imshow("Face Swapper", mFrame);
+	Mat fullFrame(Size(1920, 1080), CV_8UC3);
+	resize(mFrame, fullFrame, fullFrame.size());
+
+	imshow("Face Swapper", fullFrame);
 }
 
 /**
@@ -124,7 +127,7 @@ void FaceSwapper::detectNewFaces()
 	//Detect all the faces in the current frame
 	cvtColor(mFrame, mGFrame, CV_BGR2GRAY);
 	equalizeHist(mGFrame, mGFrame);
-	mFaceDetector.detectMultiScale(mGFrame, mFaces, 1.1, 4, CV_HAAR_SCALE_IMAGE, Size(30, 30));
+	mFaceDetector.detectMultiScale(mGFrame, mFaces, 1.1, 2, CV_HAAR_SCALE_IMAGE, Size(30, 30));
 	
 	mMisdetect.clear();
 
@@ -147,13 +150,13 @@ void FaceSwapper::trackExistingFaces()
 		std::vector<Rect> faces;
 		std::vector<Rect> eyes;
 		auto roi = doubleRectSize(mFaces[i], mGFrame.size());
-		mFaceDetector.detectMultiScale(mGFrame(roi), faces, 1.1, 2, 0, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
+		mFaceDetector.detectMultiScale(mGFrame(roi), faces, 1.1, 5, 0, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
 
 		if(faces.size() > 0)
 		{
-			mEyeDetector.detectMultiScale(mGFrame(faces[0]), eyes, 1.1, 2, CV_HAAR_SCALE_IMAGE);
+			//mEyeDetector.detectMultiScale(mGFrame(faces[0]), eyes, 1.1, 1, CV_HAAR_SCALE_IMAGE);
 
-			if(eyes.size() > 0)
+			//if(eyes.size() > 0)
 			{
 				mFaces[i] = faces[0];
 				mFaces[i].x += roi.x;
@@ -175,6 +178,8 @@ void FaceSwapper::trackExistingFaces()
 			mMisdetect[i]++;
 		}
 	}
+
+	cout << "Faces: " << mFaces.size() << endl;
 }
 
 void computeMean(const Mat &input, float *output, float *sd)

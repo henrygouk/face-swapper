@@ -68,11 +68,11 @@ void overlayImage(Mat* src, Mat* overlay, const Point& location)
 void FaceSwapper::init()
 {
 	mCapture = VideoCapture(-1);
-	mCapture.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
-	mCapture.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
+	//mCapture.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
+	//mCapture.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
 	mRunning = true;
 
-	mFaceDetector.load("/usr/share/opencv/haarcascades/haarcascade_frontalface_alt.xml");
+	mFaceDetector.load("/usr/share/opencv/haarcascades/haarcascade_frontalface_alt2.xml");
 	mEyeDetector.load("/usr/share/opencv/haarcascades/haarcascade_eye_tree_eyeglasses.xml");
 	mAlphaMask = imread("../alphamask.png", IMREAD_UNCHANGED);
 }
@@ -121,18 +121,16 @@ void FaceSwapper::draw()
   */
 void FaceSwapper::detectNewFaces()
 {
-	Mat gsFrame;
-
 	//Detect all the faces in the current frame
-	cvtColor(mFrame, gsFrame, CV_BGR2GRAY);
-	equalizeHist(gsFrame, gsFrame);
-	mFaceDetector.detectMultiScale(gsFrame, mFaces, 1.1, 4, CV_HAAR_SCALE_IMAGE, Size(30, 30));//, Size(120, 120));
+	cvtColor(mFrame, mGFrame, CV_BGR2GRAY);
+	equalizeHist(mGFrame, mGFrame);
+	mFaceDetector.detectMultiScale(mGFrame, mFaces, 1.1, 4, CV_HAAR_SCALE_IMAGE, Size(30, 30));
 	
 	mMisdetect.clear();
 
 	for(size_t i = 0; i < mFaces.size(); i++)
 	{
-		mMisdetect.push_back(0);
+		mMisdetect.push_back(3);
 	}
 }
 
@@ -148,31 +146,33 @@ void FaceSwapper::trackExistingFaces()
 		//Run the face detector on a the face ROI
 		std::vector<Rect> faces;
 		std::vector<Rect> eyes;
-		auto roi = doubleRectSize(mFaces[i], mFrame.size());
-		mFaceDetector.detectMultiScale(mFrame(roi), faces, 1.1, 2, 0, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
-		mEyeDetector.detectMultiScale(mFrame(roi), eyes, 1.1, 2, 0);
+		auto roi = doubleRectSize(mFaces[i], mGFrame.size());
+		mFaceDetector.detectMultiScale(mGFrame(roi), faces, 1.1, 2, 0, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
 
-
-		if(faces.size() > 0 && eyes.size() > 0)
+		if(faces.size() > 0)
 		{
-			//mFaces[i].x = mFaces[i].x * 0.5 + 0.5 * (roi.x + faces[0].x);
-			//mFaces[i].y = mFaces[i].y * 0.5 + 0.5 * (roi.y + faces[0].y);
-			mFaces[i] = faces[0];
-			mFaces[i].x += roi.x;
-			mFaces[i].y += roi.y;
-			mMisdetect[i] = 0;
+			mEyeDetector.detectMultiScale(mGFrame(faces[0]), eyes, 1.1, 2, CV_HAAR_SCALE_IMAGE);
+
+			if(eyes.size() > 0)
+			{
+				mFaces[i] = faces[0];
+				mFaces[i].x += roi.x;
+				mFaces[i].y += roi.y;
+				mMisdetect[i] = 0;
+
+				continue;
+			}
+		}
+
+		if(mMisdetect[i] == 3)
+		{
+			mFaces.erase(mFaces.begin() + i);
+			mMisdetect.erase(mMisdetect.begin() + i);
+			i--;
 		}
 		else
 		{
-			if(mMisdetect[i] == 5)
-			{
-				mFaces.erase(mFaces.begin() + i);
-				i--;
-			}
-			else
-			{
-				mMisdetect[i]++;
-			}
+			mMisdetect[i]++;
 		}
 	}
 }
@@ -271,8 +271,8 @@ void transferColor(Mat &primary, const Mat &secondary)
 	Mat plab = primary;//.clone();
 	Mat slab = secondary;//.clone();
 
-	//cvtColor(primary, plab, CV_BGR2Lab);
-	//cvtColor(secondary, slab, CV_BGR2Lab);
+	cvtColor(primary, plab, CV_BGR2Lab);
+	cvtColor(secondary, slab, CV_BGR2Lab);
 
 	float pMean[3];
 	float sMean[3];
@@ -283,8 +283,8 @@ void transferColor(Mat &primary, const Mat &secondary)
 	computeMean(slab, &sMean[0], &sSd[0]);
 	changeMean(plab, &pMean[0], &sMean[0], &pSd[0], &sSd[0]);
 
-	//cvtColor(plab, primary, CV_Lab2BGR);
-	//cvtColor(slab, secondary, CV_Lab2BGR);
+	cvtColor(plab, primary, CV_Lab2BGR);
+	cvtColor(slab, secondary, CV_Lab2BGR);
 }
 
 /**

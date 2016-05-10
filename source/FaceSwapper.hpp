@@ -19,6 +19,7 @@ class FaceSwapper
 		cv::VideoCapture mCapture;
 		cv::Mat mAlphaMask;
 		cv::Mat mFrame;
+		cv::Mat mGFrame;
 		cv::CascadeClassifier mFaceDetector;
 		cv::CascadeClassifier mEyeDetector;
 		std::vector<cv::Rect> mFaces;

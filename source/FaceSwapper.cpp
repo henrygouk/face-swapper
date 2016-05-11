@@ -68,12 +68,15 @@ void overlayImage(Mat* src, Mat* overlay, const Point& location)
 void FaceSwapper::init()
 {
 	mCapture = VideoCapture(-1);
-	//mCapture.set(CV_CAP_PROP_FRAME_WIDTH, 1920);
-	//mCapture.set(CV_CAP_PROP_FRAME_HEIGHT, 1080);
+	mCapture.set(CV_CAP_PROP_FRAME_WIDTH, 960);
+	mCapture.set(CV_CAP_PROP_FRAME_HEIGHT, 540);
 	mRunning = true;
+	mMode = DisplayMode::faceSwap;
 
 	mFaceDetector.load("/usr/share/opencv/haarcascades/haarcascade_frontalface_alt2.xml");
-	mEyeDetector.load("/usr/share/opencv/haarcascades/haarcascade_eye_tree_eyeglasses.xml");
+	mEyeDetector.load("/usr/share/opencv/haarcascades/haarcascade_mcs_eyepair_small.xml");
+	mMouthDetector.load("/usr/share/opencv/haarcascades/haarcascade_mcs_mouth.xml");
+	mNoseDetector.load("/usr/share/opencv/haarcascades/haarcascade_mcs_nose.xml");
 	mAlphaMask = imread("../alphamask.png", IMREAD_UNCHANGED);
 }
 
@@ -86,6 +89,9 @@ void FaceSwapper::processInput()
 {
 	mCapture.read(mFrame);
 	flip(mFrame, mFrame, 1);
+	cvtColor(mFrame, mGFrame, CV_BGR2GRAY);
+	equalizeHist(mGFrame, mGFrame);
+
 
 	int c = waitKey(1);
 
@@ -93,13 +99,21 @@ void FaceSwapper::processInput()
 	{
 		mRunning = false;
 	}
+	else if((char)c == 'b')
+	{
+		mMode = DisplayMode::boundingBox;
+	}
+	else if((char)c == 's')
+	{
+		mMode = DisplayMode::faceSwap;
+	}
 }
 
 void FaceSwapper::update()
 {
 	static int frameId = 0;
 
-	if(frameId % 30 == 0)
+	if(frameId % 15 == 0)
 	{
 		detectNewFaces();
 	}
@@ -107,7 +121,11 @@ void FaceSwapper::update()
 	frameId++;
 
 	trackExistingFaces();
-	swapFaces();
+
+	if(mMode == DisplayMode::faceSwap)
+	{
+		swapFaces();
+	}
 }
 
 void FaceSwapper::draw()
@@ -125,8 +143,6 @@ void FaceSwapper::draw()
 void FaceSwapper::detectNewFaces()
 {
 	//Detect all the faces in the current frame
-	cvtColor(mFrame, mGFrame, CV_BGR2GRAY);
-	equalizeHist(mGFrame, mGFrame);
 	mFaceDetector.detectMultiScale(mGFrame, mFaces, 1.1, 2, CV_HAAR_SCALE_IMAGE, Size(30, 30));
 	
 	mMisdetect.clear();
@@ -148,38 +164,55 @@ void FaceSwapper::trackExistingFaces()
 	{
 		//Run the face detector on a the face ROI
 		std::vector<Rect> faces;
-		std::vector<Rect> eyes;
 		auto roi = doubleRectSize(mFaces[i], mGFrame.size());
-		mFaceDetector.detectMultiScale(mGFrame(roi), faces, 1.1, 5, 0, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
+		mFaceDetector.detectMultiScale(mGFrame(roi), faces, 1.1, 5, CV_HAAR_SCALE_IMAGE, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
 
 		if(faces.size() > 0)
-		{
-			//mEyeDetector.detectMultiScale(mGFrame(faces[0]), eyes, 1.1, 1, CV_HAAR_SCALE_IMAGE);
+		{	
+			std::vector<Rect> eyes;
+			std::vector<Rect> noses;
+			std::vector<Rect> mouths;
+			mEyeDetector.detectMultiScale(mGFrame(roi), eyes, 1.1, 2, CV_HAAR_SCALE_IMAGE);
+			mNoseDetector.detectMultiScale(mGFrame(roi), noses, 1.1, 2, CV_HAAR_SCALE_IMAGE);
+			mMouthDetector.detectMultiScale(mGFrame(roi), mouths, 1.1, 5, CV_HAAR_SCALE_IMAGE);
 
-			//if(eyes.size() > 0)
+			mFaces[i] = faces[0];
+			mFaces[i].x += roi.x;
+			mFaces[i].y += roi.y;
+			mMisdetect[i] = 0;
+
+			if(mMode == DisplayMode::boundingBox)
 			{
-				mFaces[i] = faces[0];
-				mFaces[i].x += roi.x;
-				mFaces[i].y += roi.y;
-				mMisdetect[i] = 0;
+				for(size_t j = 0; j < mouths.size(); j++)
+				{
+					rectangle(mFrame, Rect(roi.x + mouths[j].x, roi.y + mouths[j].y, mouths[j].width, mouths[j].height), CV_RGB(0,255,0));
+				}
 
-				continue;
+				for(size_t j = 0; j < noses.size(); j++)
+				{
+					rectangle(mFrame, Rect(roi.x + noses[j].x, roi.y + noses[j].y, noses[j].width, noses[j].height), CV_RGB(0,0,255));
+				}
+
+				for(size_t j = 0; j < eyes.size(); j++)
+				{
+					rectangle(mFrame, Rect(roi.x + eyes[j].x, roi.y + eyes[j].y, eyes[j].width, eyes[j].height), CV_RGB(255,0,0));
+				}
 			}
-		}
-
-		if(mMisdetect[i] == 3)
-		{
-			mFaces.erase(mFaces.begin() + i);
-			mMisdetect.erase(mMisdetect.begin() + i);
-			i--;
 		}
 		else
 		{
-			mMisdetect[i]++;
+			if(mMisdetect[i] == 3)
+			{
+				mFaces.erase(mFaces.begin() + i);
+				mMisdetect.erase(mMisdetect.begin() + i);
+				i--;
+			}
+			else
+			{
+				mMisdetect[i]++;
+			}
 		}
 	}
-
-	cout << "Faces: " << mFaces.size() << endl;
 }
 
 void computeMean(const Mat &input, float *output, float *sd)

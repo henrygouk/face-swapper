@@ -65,6 +65,15 @@ void overlayImage(Mat* src, Mat* overlay, const Point& location)
     }
 }
 
+Face::Face(Rect facePos)
+{
+	face = facePos;
+
+	//Track 2d positions and velocities of face, mouth, eyes, and nose (16 componenets in total)
+	//Only want estimates of the positions (8 components total)
+	kalmanFilter = KalmanFilter(16, 8, 0, CV_32F);
+}
+
 void FaceSwapper::init()
 {
 	mCapture = VideoCapture(-1);

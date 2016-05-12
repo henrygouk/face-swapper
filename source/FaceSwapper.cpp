@@ -6,6 +6,11 @@
 using namespace cv;
 using namespace std;
 
+float clamp(float a, float b, float c)
+{
+	return max(a, min(b, c));
+}
+
 cv::Rect doubleRectSize(const cv::Rect &inputRect, const cv::Size &frameSize)
 {
     cv::Rect outputRect;
@@ -68,10 +73,55 @@ void overlayImage(Mat* src, Mat* overlay, const Point& location)
 Face::Face(Rect facePos)
 {
 	face = facePos;
+	misdetect = 0;
 
 	//Track 2d positions and velocities of face, mouth, eyes, and nose (16 componenets in total)
 	//Only want estimates of the positions (8 components total)
-	kalmanFilter = KalmanFilter(16, 8, 0, CV_32F);
+	//kalmanFilter = KalmanFilter(16, 8, 0, CV_32F);
+
+	//Try just tracking the face box atm
+	kalmanFilter = KalmanFilter(6, 3, 0);
+
+	kalmanFilter.transitionMatrix = *(Mat_<float>(6, 6) <<
+			1,0,0,1,0,0,
+			0,1,0,0,1,0,
+			0,0,1,0,0,1,
+			0,0,0,1,0,0,
+			0,0,0,0,1,0,
+			0,0,0,0,0,1);
+
+	kalmanFilter.statePost.at<float>(0) = face.x + face.width / 2;
+	kalmanFilter.statePost.at<float>(1) = face.y + face.height / 2;
+	kalmanFilter.statePost.at<float>(2) = face.width;
+	kalmanFilter.statePost.at<float>(3) = 0;
+	kalmanFilter.statePost.at<float>(4) = 0;
+	kalmanFilter.statePost.at<float>(5) = 0;
+
+	setIdentity(kalmanFilter.measurementMatrix);
+	setIdentity(kalmanFilter.processNoiseCov, Scalar::all(1));
+	setIdentity(kalmanFilter.measurementNoiseCov, Scalar::all(10));
+	setIdentity(kalmanFilter.errorCovPost, Scalar::all(10));
+}
+
+void Face::update(Rect inputPos, Size frameSize)
+{
+	misdetect = 0;
+	Mat pred = kalmanFilter.predict();
+
+	Mat measurement(3, 1, CV_32F);
+	measurement.at<float>(0) = inputPos.x + inputPos.width / 2;
+	measurement.at<float>(1) = inputPos.y + inputPos.height / 2;
+	measurement.at<float>(2) = inputPos.width;
+
+	Mat est = kalmanFilter.correct(measurement);
+
+	face.x = est.at<float>(0) - inputPos.width / 2;
+	face.y = est.at<float>(1) - inputPos.height / 2;
+	face.width = est.at<float>(2);
+	face.height = ((float)inputPos.height / (float)inputPos.width) * est.at<float>(2);
+
+	face.x = clamp(0, face.x, frameSize.width - face.width);
+	face.y = clamp(0, face.y, frameSize.height - face.height);
 }
 
 void FaceSwapper::init()
@@ -122,7 +172,7 @@ void FaceSwapper::update()
 {
 	static int frameId = 0;
 
-	if(frameId % 15 == 0)
+	if(frameId % 180 == 0)
 	{
 		detectNewFaces();
 	}
@@ -152,13 +202,23 @@ void FaceSwapper::draw()
 void FaceSwapper::detectNewFaces()
 {
 	//Detect all the faces in the current frame
-	mFaceDetector.detectMultiScale(mGFrame, mFaces, 1.1, 2, CV_HAAR_SCALE_IMAGE, Size(30, 30));
+	//mFaceDetector.detectMultiScale(mGFrame, mFaces, 1.1, 2, CV_HAAR_SCALE_IMAGE, Size(30, 30));
 	
-	mMisdetect.clear();
+	/*mMisdetect.clear();
 
 	for(size_t i = 0; i < mFaces.size(); i++)
 	{
 		mMisdetect.push_back(3);
+	}*/
+
+	vector<Rect> faces;
+	mFaceDetector.detectMultiScale(mGFrame, faces, 1.1, 5, CV_HAAR_SCALE_IMAGE, Size(30, 30));
+
+	mFaces.clear();
+
+	for(size_t i = 0; i < faces.size(); i++)
+	{
+		mFaces.push_back(Face(faces[i]));
 	}
 }
 
@@ -173,25 +233,33 @@ void FaceSwapper::trackExistingFaces()
 	{
 		//Run the face detector on a the face ROI
 		std::vector<Rect> faces;
-		auto roi = doubleRectSize(mFaces[i], mGFrame.size());
+		auto roi = doubleRectSize(mFaces[i].face, mGFrame.size());
 		mFaceDetector.detectMultiScale(mGFrame(roi), faces, 1.1, 5, CV_HAAR_SCALE_IMAGE, Size(roi.width * 4 / 10, roi.height * 4 / 10), Size(roi.width * 6 / 10, roi.width * 6 / 10));
 
 		if(faces.size() > 0)
 		{	
-			std::vector<Rect> eyes;
+			/*std::vector<Rect> eyes;
 			std::vector<Rect> noses;
 			std::vector<Rect> mouths;
 			mEyeDetector.detectMultiScale(mGFrame(roi), eyes, 1.1, 2, CV_HAAR_SCALE_IMAGE);
 			mNoseDetector.detectMultiScale(mGFrame(roi), noses, 1.1, 2, CV_HAAR_SCALE_IMAGE);
-			mMouthDetector.detectMultiScale(mGFrame(roi), mouths, 1.1, 5, CV_HAAR_SCALE_IMAGE);
+			mMouthDetector.detectMultiScale(mGFrame(roi), mouths, 1.1, 5, CV_HAAR_SCALE_IMAGE);*/
 
-			mFaces[i] = faces[0];
+			/*mFaces[i] = faces[0];
 			mFaces[i].x += roi.x;
 			mFaces[i].y += roi.y;
-			mMisdetect[i] = 0;
+			mMisdetect[i] = 0;*/
+			Rect inputPos = faces[0];
+			inputPos.x += roi.x;
+			inputPos.y += roi.y;
+			
+			mFaces[i].update(inputPos, mFrame.size());
 
 			if(mMode == DisplayMode::boundingBox)
 			{
+				rectangle(mFrame, mFaces[i].face, CV_RGB(255, 0, 255));
+
+				/*
 				for(size_t j = 0; j < mouths.size(); j++)
 				{
 					rectangle(mFrame, Rect(roi.x + mouths[j].x, roi.y + mouths[j].y, mouths[j].width, mouths[j].height), CV_RGB(0,255,0));
@@ -206,19 +274,22 @@ void FaceSwapper::trackExistingFaces()
 				{
 					rectangle(mFrame, Rect(roi.x + eyes[j].x, roi.y + eyes[j].y, eyes[j].width, eyes[j].height), CV_RGB(255,0,0));
 				}
+				*/
 			}
 		}
 		else
 		{
-			if(mMisdetect[i] == 3)
+			//if(mMisdetect[i] == 3)
+			if(mFaces[i].misdetect == 3)
 			{
 				mFaces.erase(mFaces.begin() + i);
-				mMisdetect.erase(mMisdetect.begin() + i);
+				//mMisdetect.erase(mMisdetect.begin() + i);
 				i--;
 			}
 			else
 			{
-				mMisdetect[i]++;
+				//mMisdetect[i]++;
+				mFaces[i].misdetect++;
 			}
 		}
 	}
@@ -266,11 +337,6 @@ void computeMean(const Mat &input, float *output, float *sd)
 	sd[0] = sqrt(sd[0]);
 	sd[1] = sqrt(sd[1]);
 	sd[2] = sqrt(sd[2]);
-}
-
-float clamp(float a, float b, float c)
-{
-	return max(a, min(b, c));
 }
 
 void changeMean(Mat &input, float *oldMean, float *newMean, float *oldSd, float *newSd)
@@ -344,8 +410,8 @@ void FaceSwapper::swapFaces()
 
 	for(size_t i = 0; i < mFaces.size(); i++)
 	{
-		auto cf = mFaces[i];
-		auto nf = mFaces[(i + 1) % mFaces.size()];
+		auto cf = mFaces[i].face;
+		auto nf = mFaces[(i + 1) % mFaces.size()].face;
 		auto currentFace = frameDup(cf);
 		auto nextFace = mFrame(nf);
 		Mat currentFaceBGRA(nextFace.size(), CV_8UC4);

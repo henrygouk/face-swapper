@@ -15,6 +15,7 @@ enum DisplayMode
 class Face
 {
 	public:
+		int misdetect;
 		cv::Rect face;
 		cv::Rect eyes;
 		cv::Rect nose;
@@ -22,6 +23,7 @@ class Face
 		cv::KalmanFilter kalmanFilter;
 
 		Face(cv::Rect f);
+		void update(cv::Rect inputPos, cv::Size frameSize);
 };
 
 class FaceSwapper
@@ -44,8 +46,9 @@ class FaceSwapper
 		cv::CascadeClassifier mEyeDetector;
 		cv::CascadeClassifier mNoseDetector;
 		cv::CascadeClassifier mMouthDetector;
-		std::vector<cv::Rect> mFaces;
-		std::vector<size_t> mMisdetect;
+		//std::vector<cv::Rect> mFaces;
+		//std::vector<size_t> mMisdetect;
+		std::vector<Face> mFaces;
 
 		void detectNewFaces();
 		void trackExistingFaces();

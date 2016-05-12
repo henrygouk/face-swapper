@@ -4,7 +4,7 @@ project(face-swapper CXX)
 
 find_package(OpenCV REQUIRED)
 
-add_definitions(-std=c++11)
+add_definitions(-std=c++11 -g)
 
 add_executable(
 	face-swapper

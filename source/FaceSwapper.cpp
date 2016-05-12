@@ -79,35 +79,47 @@ Face::Face(Rect facePos)
 	//Only want estimates of the positions (8 components total)
 	//kalmanFilter = KalmanFilter(16, 8, 0, CV_32F);
 
-	//Try just tracking the face and eyes boxes atm
-	kalmanFilter = KalmanFilter(12, 6, 0);
+	//Track faces eyes and nose
+	kalmanFilter = KalmanFilter(18, 9, 0);
 
-	kalmanFilter.transitionMatrix = *(Mat_<float>(12, 12) <<
-			1,0,0,0,0,0,1,0,0,0,0,0,
-			0,1,0,0,0,0,0,1,0,0,0,0,
-			0,0,1,0,0,0,0,0,1,0,0,0,
-			0,0,0,1,0,0,0,0,0,1,0,0,
-			0,0,0,0,1,0,0,0,0,0,1,0,
-			0,0,0,0,0,1,0,0,0,0,0,1,
-			0,0,0,0,0,0,1,0,0,0,0,0,
-			0,0,0,0,0,0,0,1,0,0,0,0,
-			0,0,0,0,0,0,0,0,1,0,0,0,
-			0,0,0,0,0,0,0,0,0,1,0,0,
-			0,0,0,0,0,0,0,0,0,0,1,0,
-			0,0,0,0,0,0,0,0,0,0,0,1);
+	kalmanFilter.transitionMatrix = *(Mat_<float>(18, 18) <<
+			1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,
+			0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,
+			0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,
+			0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,
+			0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,
+			0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,
+			0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,
+			0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,
+			0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,
+			0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1);
 
 	kalmanFilter.statePost.at<float>(0) = face.x + face.width / 2;
 	kalmanFilter.statePost.at<float>(1) = face.y + face.height / 2;
 	kalmanFilter.statePost.at<float>(2) = face.width;
 	kalmanFilter.statePost.at<float>(3) = face.x + face.width / 2;
-	kalmanFilter.statePost.at<float>(4) = face.y + face.height / 2;
+	kalmanFilter.statePost.at<float>(4) = face.y + face.height / 3;
 	kalmanFilter.statePost.at<float>(5) = ((float)face.width / 3.0) * 2.0;
-	kalmanFilter.statePost.at<float>(6) = 0;
-	kalmanFilter.statePost.at<float>(7) = 0;
-	kalmanFilter.statePost.at<float>(8) = 0;
+	kalmanFilter.statePost.at<float>(6) = face.x + face.width / 2;
+	kalmanFilter.statePost.at<float>(7) = face.y + face.height / 2;
+	kalmanFilter.statePost.at<float>(8) = ((float)face.width / 6.0);
 	kalmanFilter.statePost.at<float>(9) = 0;
 	kalmanFilter.statePost.at<float>(10) = 0;
 	kalmanFilter.statePost.at<float>(11) = 0;
+	kalmanFilter.statePost.at<float>(12) = 0;
+	kalmanFilter.statePost.at<float>(13) = 0;
+	kalmanFilter.statePost.at<float>(14) = 0;
+	kalmanFilter.statePost.at<float>(15) = 0;
+	kalmanFilter.statePost.at<float>(16) = 0;
+	kalmanFilter.statePost.at<float>(17) = 0;
 
 	setIdentity(kalmanFilter.measurementMatrix);
 	setIdentity(kalmanFilter.processNoiseCov, Scalar::all(1));
@@ -120,17 +132,20 @@ void Face::predict()
 	kalmanFilter.predict();
 }
 
-void Face::update(Rect inputPos, Rect eyePos, Size frameSize)
+void Face::update(Rect inputPos, Rect eyePos, Rect nosePos, Size frameSize)
 {
 	misdetect = 0;
 
-	Mat measurement(6, 1, CV_32F);
+	Mat measurement(9, 1, CV_32F);
 	measurement.at<float>(0) = inputPos.x + inputPos.width / 2;
 	measurement.at<float>(1) = inputPos.y + inputPos.height / 2;
 	measurement.at<float>(2) = inputPos.width;
 	measurement.at<float>(3) = eyePos.x + eyePos.width / 2;
 	measurement.at<float>(4) = eyePos.y + eyePos.height / 2;
 	measurement.at<float>(5) = eyePos.width;
+	measurement.at<float>(6) = nosePos.x + nosePos.width / 2;
+	measurement.at<float>(7) = nosePos.y + nosePos.height / 2;
+	measurement.at<float>(8) = nosePos.width;
 
 	Mat est = kalmanFilter.correct(measurement);
 
@@ -143,6 +158,11 @@ void Face::update(Rect inputPos, Rect eyePos, Size frameSize)
 	eyes.height = ((float)eyePos.height / (float)eyePos.width) * est.at<float>(5);
 	eyes.x = est.at<float>(3) - eyes.width / 2;
 	eyes.y = est.at<float>(4) - eyes.height / 2;
+
+	nose.width = est.at<float>(8);
+	nose.height = ((float)nosePos.height / (float)nosePos.width) * est.at<float>(8);
+	nose.x = est.at<float>(6) - nose.width / 2;
+	nose.y = est.at<float>(7) - nose.height / 2;
 
 	face.x = clamp(0, face.x, frameSize.width - face.width);
 	face.y = clamp(0, face.y, frameSize.height - face.height);
@@ -196,7 +216,7 @@ void FaceSwapper::update()
 {
 	static int frameId = 0;
 
-	if(frameId % 30 == 0)
+	if(frameId % 150 == 0)
 	{
 		detectNewFaces();
 	}
@@ -269,21 +289,21 @@ void FaceSwapper::trackExistingFaces()
 
 		if(faces.size() > 0)
 		{	
-			std::vector<Rect> eyes;
-			//std::vector<Rect> noses;
-			//std::vector<Rect> mouths;
-			mEyeDetector.detectMultiScale(mGFrame(roi), eyes, 1.1, 3, CV_HAAR_SCALE_IMAGE);
-			//mNoseDetector.detectMultiScale(mGFrame(roi), noses, 1.1, 2, CV_HAAR_SCALE_IMAGE);
-			//mMouthDetector.detectMultiScale(mGFrame(roi), mouths, 1.1, 5, CV_HAAR_SCALE_IMAGE);
-
-			if(eyes.size() == 0)// || noses.size() == 0)
-			{
-				continue;
-			}
-
 			Rect inputPos = faces[0];
 			inputPos.x += roi.x;
 			inputPos.y += roi.y;
+
+			std::vector<Rect> eyes;
+			std::vector<Rect> noses;
+			//std::vector<Rect> mouths;
+			mEyeDetector.detectMultiScale(mGFrame(inputPos), eyes, 1.1, 3, CV_HAAR_SCALE_IMAGE);
+			mNoseDetector.detectMultiScale(mGFrame(inputPos), noses, 1.1, 2, CV_HAAR_SCALE_IMAGE);
+			//mMouthDetector.detectMultiScale(mGFrame(roi), mouths, 1.1, 5, CV_HAAR_SCALE_IMAGE);
+
+			if(eyes.size() == 0 || noses.size() == 0)
+			{
+				continue;
+			}
 
 			Rect eyePos = eyes[0];
 			float eyeDist = euclideanDistance(eyePos, mFaces[i].eyes);
@@ -298,15 +318,20 @@ void FaceSwapper::trackExistingFaces()
 				}
 			}
 
-			eyePos.x += roi.x;
-			eyePos.y += roi.y;
+			eyePos.x += inputPos.x;
+			eyePos.y += inputPos.y;
 
-			mFaces[i].update(inputPos, eyePos, mFrame.size());
+			Rect nosePos = noses[0];
+			nosePos.x += inputPos.x;
+			nosePos.y += inputPos.y;
+
+			mFaces[i].update(inputPos, eyePos, nosePos, mFrame.size());
 
 			if(mMode == DisplayMode::boundingBox)
 			{
 				rectangle(mFrame, mFaces[i].face, CV_RGB(255, 0, 255));
 				rectangle(mFrame, mFaces[i].eyes, CV_RGB(255, 0, 0));
+				rectangle(mFrame, mFaces[i].nose, CV_RGB(0, 255, 0));
 
 				/*
 				for(size_t j = 0; j < mouths.size(); j++)
@@ -329,7 +354,7 @@ void FaceSwapper::trackExistingFaces()
 		else
 		{
 			//if(mMisdetect[i] == 3)
-			if(mFaces[i].misdetect == 3)
+			if(mFaces[i].misdetect == 5)
 			{
 				mFaces.erase(mFaces.begin() + i);
 				//mMisdetect.erase(mMisdetect.begin() + i);

@@ -24,7 +24,7 @@ class Face
 
 		Face(cv::Rect f);
 		void predict();
-		void update(cv::Rect inputPos, cv::Rect eyePos, cv::Size frameSize);
+		void update(cv::Rect inputPos, cv::Rect eyePos, cv::Rect nosePos, cv::Size frameSize);
 };
 
 class FaceSwapper

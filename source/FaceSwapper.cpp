@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <iostream>
+#include <iomanip>
+#include <ctime>
+#include <sstream>
 
 using namespace cv;
 using namespace std;
@@ -190,12 +193,6 @@ bool FaceSwapper::running()
 
 void FaceSwapper::processInput()
 {
-	mCapture.read(mFrame);
-	flip(mFrame, mFrame, 1);
-	cvtColor(mFrame, mGFrame, CV_BGR2GRAY);
-	equalizeHist(mGFrame, mGFrame);
-
-
 	int c = waitKey(1);
 
 	if((char)c == 'q')
@@ -210,6 +207,20 @@ void FaceSwapper::processInput()
 	{
 		mMode = DisplayMode::faceSwap;
 	}
+	else if((char)c == 'w')
+	{
+		auto t = std::time(nullptr);
+	    auto tm = *std::localtime(&t);
+	    stringstream ss;
+		ss << put_time(&tm, "%d-%m-%Y-%H-%M-%S.png");
+
+		imwrite(ss.str(), mFrame);
+	}
+
+	mCapture.read(mFrame);
+	flip(mFrame, mFrame, 1);
+	cvtColor(mFrame, mGFrame, CV_BGR2GRAY);
+	equalizeHist(mGFrame, mGFrame);
 }
 
 void FaceSwapper::update()

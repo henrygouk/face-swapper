@@ -79,23 +79,35 @@ Face::Face(Rect facePos)
 	//Only want estimates of the positions (8 components total)
 	//kalmanFilter = KalmanFilter(16, 8, 0, CV_32F);
 
-	//Try just tracking the face box atm
-	kalmanFilter = KalmanFilter(6, 3, 0);
+	//Try just tracking the face and eyes boxes atm
+	kalmanFilter = KalmanFilter(12, 6, 0);
 
-	kalmanFilter.transitionMatrix = *(Mat_<float>(6, 6) <<
-			1,0,0,1,0,0,
-			0,1,0,0,1,0,
-			0,0,1,0,0,1,
-			0,0,0,1,0,0,
-			0,0,0,0,1,0,
-			0,0,0,0,0,1);
+	kalmanFilter.transitionMatrix = *(Mat_<float>(12, 12) <<
+			1,0,0,0,0,0,1,0,0,0,0,0,
+			0,1,0,0,0,0,0,1,0,0,0,0,
+			0,0,1,0,0,0,0,0,1,0,0,0,
+			0,0,0,1,0,0,0,0,0,1,0,0,
+			0,0,0,0,1,0,0,0,0,0,1,0,
+			0,0,0,0,0,1,0,0,0,0,0,1,
+			0,0,0,0,0,0,1,0,0,0,0,0,
+			0,0,0,0,0,0,0,1,0,0,0,0,
+			0,0,0,0,0,0,0,0,1,0,0,0,
+			0,0,0,0,0,0,0,0,0,1,0,0,
+			0,0,0,0,0,0,0,0,0,0,1,0,
+			0,0,0,0,0,0,0,0,0,0,0,1);
 
 	kalmanFilter.statePost.at<float>(0) = face.x + face.width / 2;
 	kalmanFilter.statePost.at<float>(1) = face.y + face.height / 2;
 	kalmanFilter.statePost.at<float>(2) = face.width;
-	kalmanFilter.statePost.at<float>(3) = 0;
-	kalmanFilter.statePost.at<float>(4) = 0;
-	kalmanFilter.statePost.at<float>(5) = 0;
+	kalmanFilter.statePost.at<float>(3) = face.x + face.width / 2;
+	kalmanFilter.statePost.at<float>(4) = face.y + face.height / 2;
+	kalmanFilter.statePost.at<float>(5) = ((float)face.width / 3.0) * 2.0;
+	kalmanFilter.statePost.at<float>(6) = 0;
+	kalmanFilter.statePost.at<float>(7) = 0;
+	kalmanFilter.statePost.at<float>(8) = 0;
+	kalmanFilter.statePost.at<float>(9) = 0;
+	kalmanFilter.statePost.at<float>(10) = 0;
+	kalmanFilter.statePost.at<float>(11) = 0;
 
 	setIdentity(kalmanFilter.measurementMatrix);
 	setIdentity(kalmanFilter.processNoiseCov, Scalar::all(1));
@@ -103,22 +115,34 @@ Face::Face(Rect facePos)
 	setIdentity(kalmanFilter.errorCovPost, Scalar::all(10));
 }
 
-void Face::update(Rect inputPos, Size frameSize)
+void Face::predict()
+{
+	kalmanFilter.predict();
+}
+
+void Face::update(Rect inputPos, Rect eyePos, Size frameSize)
 {
 	misdetect = 0;
-	Mat pred = kalmanFilter.predict();
 
-	Mat measurement(3, 1, CV_32F);
+	Mat measurement(6, 1, CV_32F);
 	measurement.at<float>(0) = inputPos.x + inputPos.width / 2;
 	measurement.at<float>(1) = inputPos.y + inputPos.height / 2;
 	measurement.at<float>(2) = inputPos.width;
+	measurement.at<float>(3) = eyePos.x + eyePos.width / 2;
+	measurement.at<float>(4) = eyePos.y + eyePos.height / 2;
+	measurement.at<float>(5) = eyePos.width;
 
 	Mat est = kalmanFilter.correct(measurement);
 
-	face.x = est.at<float>(0) - inputPos.width / 2;
-	face.y = est.at<float>(1) - inputPos.height / 2;
 	face.width = est.at<float>(2);
-	face.height = ((float)inputPos.height / (float)inputPos.width) * est.at<float>(2);
+	face.height = est.at<float>(2);
+	face.x = est.at<float>(0) - face.width / 2;
+	face.y = est.at<float>(1) - face.height / 2;
+
+	eyes.width = est.at<float>(5);
+	eyes.height = ((float)eyePos.height / (float)eyePos.width) * est.at<float>(5);
+	eyes.x = est.at<float>(3) - eyes.width / 2;
+	eyes.y = est.at<float>(4) - eyes.height / 2;
 
 	face.x = clamp(0, face.x, frameSize.width - face.width);
 	face.y = clamp(0, face.y, frameSize.height - face.height);
@@ -172,7 +196,7 @@ void FaceSwapper::update()
 {
 	static int frameId = 0;
 
-	if(frameId % 180 == 0)
+	if(frameId % 30 == 0)
 	{
 		detectNewFaces();
 	}
@@ -222,6 +246,11 @@ void FaceSwapper::detectNewFaces()
 	}
 }
 
+float euclideanDistance(Rect a, Rect b)
+{
+	return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2));
+}
+
 /**
   Updates the bounding boxes for detected faces in order to compensate for movement.
   Also does temporal smoothing to compensate for ocassional false negatives.
@@ -231,6 +260,8 @@ void FaceSwapper::trackExistingFaces()
 	//Iterate over each tracked face
 	for(size_t i = 0; i < mFaces.size(); i++)
 	{
+		mFaces[i].predict();
+
 		//Run the face detector on a the face ROI
 		std::vector<Rect> faces;
 		auto roi = doubleRectSize(mFaces[i].face, mGFrame.size());
@@ -238,26 +269,44 @@ void FaceSwapper::trackExistingFaces()
 
 		if(faces.size() > 0)
 		{	
-			/*std::vector<Rect> eyes;
-			std::vector<Rect> noses;
-			std::vector<Rect> mouths;
-			mEyeDetector.detectMultiScale(mGFrame(roi), eyes, 1.1, 2, CV_HAAR_SCALE_IMAGE);
-			mNoseDetector.detectMultiScale(mGFrame(roi), noses, 1.1, 2, CV_HAAR_SCALE_IMAGE);
-			mMouthDetector.detectMultiScale(mGFrame(roi), mouths, 1.1, 5, CV_HAAR_SCALE_IMAGE);*/
+			std::vector<Rect> eyes;
+			//std::vector<Rect> noses;
+			//std::vector<Rect> mouths;
+			mEyeDetector.detectMultiScale(mGFrame(roi), eyes, 1.1, 3, CV_HAAR_SCALE_IMAGE);
+			//mNoseDetector.detectMultiScale(mGFrame(roi), noses, 1.1, 2, CV_HAAR_SCALE_IMAGE);
+			//mMouthDetector.detectMultiScale(mGFrame(roi), mouths, 1.1, 5, CV_HAAR_SCALE_IMAGE);
 
-			/*mFaces[i] = faces[0];
-			mFaces[i].x += roi.x;
-			mFaces[i].y += roi.y;
-			mMisdetect[i] = 0;*/
+			if(eyes.size() == 0)// || noses.size() == 0)
+			{
+				continue;
+			}
+
 			Rect inputPos = faces[0];
 			inputPos.x += roi.x;
 			inputPos.y += roi.y;
-			
-			mFaces[i].update(inputPos, mFrame.size());
+
+			Rect eyePos = eyes[0];
+			float eyeDist = euclideanDistance(eyePos, mFaces[i].eyes);
+
+			for(size_t j = 1; j < eyes.size(); j++)
+			{
+				float d = euclideanDistance(eyes[j], mFaces[i].eyes);
+
+				if(d < eyeDist)
+				{
+					eyePos = eyes[j];
+				}
+			}
+
+			eyePos.x += roi.x;
+			eyePos.y += roi.y;
+
+			mFaces[i].update(inputPos, eyePos, mFrame.size());
 
 			if(mMode == DisplayMode::boundingBox)
 			{
 				rectangle(mFrame, mFaces[i].face, CV_RGB(255, 0, 255));
+				rectangle(mFrame, mFaces[i].eyes, CV_RGB(255, 0, 0));
 
 				/*
 				for(size_t j = 0; j < mouths.size(); j++)

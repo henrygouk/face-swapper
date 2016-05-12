@@ -23,7 +23,8 @@ class Face
 		cv::KalmanFilter kalmanFilter;
 
 		Face(cv::Rect f);
-		void update(cv::Rect inputPos, cv::Size frameSize);
+		void predict();
+		void update(cv::Rect inputPos, cv::Rect eyePos, cv::Size frameSize);
 };
 
 class FaceSwapper
